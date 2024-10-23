@@ -186,7 +186,7 @@ def shape_bits(bits, table):
     return new_bits
 
 
-def single_const_full(bits_amount, mod_create_fun, snr_range, theory_ber_fun):
+def single_const_full(bits_amount, mod_create_fun, snr_range, theory_ber_fun, constellation_name):
     _, bit_depth = mod_create_fun()
 
     Eb_n0_dB = snr_range - 10 * np.log10(bit_depth)
@@ -194,19 +194,22 @@ def single_const_full(bits_amount, mod_create_fun, snr_range, theory_ber_fun):
     print(Eb_n0_dB)
     ber_arr = np.zeros(len(snr_range))
     true_ber_arr = [ theory_ber_fun(eb_n0_val) for eb_n0_val in Eb_n0]
-    print(true_ber_arr)
+    # print(true_ber_arr)
     for i, snr in enumerate(snr_range):
         print(i)
         ber_arr[i] = experiment(bits_amount, mod_create_fun, snr)
-    print(ber_arr)
+    # print(ber_arr)
+    plt.figure()
     plt.plot(snr_range, ber_arr, label = 'practice')
     plt.plot(snr_range, true_ber_arr, label = 'theory')
     plt.xlabel('SNR [dB]')
     plt.yscale('log')
+    plt.title(f"Theory vs modeling comparison for {constellation_name}")
     plt.grid()
     plt.ylabel('BER')
     plt.legend(fontsize = 10)
-    plt.show()
+    plt.savefig(f"{constellation_name}_ther_model.png")
+    # plt.show()
 
 def experiment(bits_amount, mod_create_fun, snr):
     bits = (np.random.rand(bits_amount) > 0.5).astype(int)
@@ -234,6 +237,20 @@ def qam16_bit_shaping(bits_amount, snr, table_fun):
     # breakpoint()
     return eval_ber(bits, recv)
 
+def show_constellations(mapper_arr, bit_depth, constellation_name):
+    point_amount = int(2 ** bit_depth)
+    indices = range(point_amount)
+    indices_in_text = [bin(val)[2:].rjust(bit_depth, '0') for val in indices]
+    points_x = [np.real(point) for point in mapper_arr]
+    points_y = [np.imag(point) for point in mapper_arr]
+    plt.figure()
+    plt.scatter(points_x, points_y)
+    for x, y, name in zip(points_x, points_y, indices_in_text):
+        plt.annotate(name, (x, y))
+    plt.grid()
+    plt.title(f"{constellation_name.upper()} points")
+    plt.savefig(f"{constellation_name}.png")
+
 def compare_shaping_res():
     snr_range = np.arange(0, 20)
     snr_amount = len(snr_range)
@@ -254,22 +271,32 @@ def compare_shaping_res():
     plt.yscale('log')
     plt.grid()
     plt.ylabel('BER')
+    plt.title('BER(SNR) for different shaping for QAM16 comparison')
     plt.legend(fontsize = 10)
+    plt.savefig("with_shaping.png")
     plt.show()
 
-def main():
+def compare_theory_practice():
     funs = [qpsk_arr_create, qam16_arr_create, qam64_arr_create]
     snr_ranges = [np.arange(0, 14), np.arange(0, 20), np.arange(0, 20)]
     theory_funcs = [lambda x : math.erfc(math.sqrt(x)) / 2,
                     lambda x : math.erfc(math.sqrt(x * 2 / 5)) * 3 / 8,
                     lambda x : math.erfc(math.sqrt(3 * x / 21)) * (1 - 1 / 8) / 3,
                     ]
-    for i in range(2, len(snr_ranges)):
-        single_const_full(12 * 100000, funs[i], snr_ranges[i], theory_funcs[i])
+    names = ["QPSK", "QAM16", "QAM64"]
+    for i in range(0, len(snr_ranges)):
+        single_const_full(12 * 100000, funs[i], snr_ranges[i], theory_funcs[i], names[i])
 
     # print_gray()
     # print(powered)
 
+def get_constellation_graphs():
+    show_constellations(*qpsk_arr_create(), "qpsk")
+    show_constellations(*qam16_arr_create(), "qam16")
+    show_constellations(*qam64_arr_create(), "qam64")
+
 if __name__ == "__main__":
     # print(test_bit_shaping(240000, 30))
+    # compare_theory_practice()
+    # get_constellation_graphs()
     compare_shaping_res()
