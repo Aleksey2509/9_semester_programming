@@ -235,7 +235,7 @@ def qam16_bit_shaping(bits_amount, snr, table_fun):
     # print(f"got {new_bits}, ampls notted: {np.logical_not(new_bits[1::2]).astype(int)}")
     recv = deshape_bits(demodulated, table_fun())
     # breakpoint()
-    return eval_ber(bits, recv)
+    return eval_ber(demodulated, new_bits)
 
 def show_constellations(mapper_arr, bit_depth, constellation_name):
     point_amount = int(2 ** bit_depth)
