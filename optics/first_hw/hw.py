@@ -276,6 +276,28 @@ def compare_shaping_res():
     plt.savefig("with_shaping.png")
     plt.show()
 
+def plot_theory():
+    names = ["QPSK", "QAM16", "QAM64"]
+    bit_depths = [2, 4, 6]
+    snr_ranges = [np.arange(0, 14), np.arange(0, 20), np.arange(0, 20)]
+    theory_funcs = [lambda x : math.erfc(math.sqrt(x)) / 2,
+                    lambda x : math.erfc(math.sqrt(x * 2 / 5)) * 3 / 8,
+                    lambda x : math.erfc(math.sqrt(3 * x / 21)) * (1 - 1 / 8) / 3,
+                    ]
+    for name, bit_depth, snr_rg, theory_fun in zip(names, bit_depths, snr_ranges, theory_funcs):
+        Eb_n0_dB = snr_rg - 10 * np.log10(bit_depth)
+        Eb_n0 = np.pow(10, Eb_n0_dB / 10)
+        ber_arr = [ theory_fun(eb_n0_val) for eb_n0_val in Eb_n0]
+        plt.figure()
+        plt.plot(snr_rg, ber_arr)
+        plt.xlabel('SNR [dB]')
+        plt.yscale('log')
+        plt.title(f"Theory BER(SNR) for {name}")
+        plt.grid()
+        plt.ylabel('BER')
+        plt.savefig(f"{name}_theory.png")
+
+
 def compare_theory_practice():
     funs = [qpsk_arr_create, qam16_arr_create, qam64_arr_create]
     snr_ranges = [np.arange(0, 14), np.arange(0, 20), np.arange(0, 20)]
@@ -299,4 +321,5 @@ if __name__ == "__main__":
     # print(test_bit_shaping(240000, 30))
     # compare_theory_practice()
     # get_constellation_graphs()
-    compare_shaping_res()
+    plot_theory()
+    # compare_shaping_res()
