@@ -12,7 +12,7 @@ def qam16_arr_create():
                  -1 + 3j, -1 + 1j, -1 - 3j, -1 - 1j,
                   3 + 3j,  3 + 1j,  3 - 3j,  3 - 1j,
                   1 + 3j,  1 + 1j,  1 - 3j,  1 - 1j])
-    qam16_arr = qam16_arr * np.sqrt(len(qam16_arr)) / np.linalg.norm(qam16_arr)
+    # qam16_arr = qam16_arr * np.sqrt(len(qam16_arr)) / np.linalg.norm(qam16_arr)
     return qam16_arr, 4
 
 def slower_qam64(bits):
@@ -103,10 +103,12 @@ def gen_awgn(points, snr):
     points_amount = len(points)
     root_points_power = np.linalg.norm(points) / np.sqrt(points_amount)
     # print(10 * np.log10(root_points_power ** 2))
-    print(root_points_power)
-    noise_power = root_points_power / (2 * (10 ** (snr / 10)))
+    # print(root_points_power)
+    # print(10 ** (snr / 10))
+    noise_power = (root_points_power ** 2) / (2 * (10 ** (snr / 10)))
     real_part = np.random.normal(scale = np.sqrt(noise_power), size=points_amount)
     imag_part = np.random.normal(scale = np.sqrt(noise_power), size=points_amount)
+    # print(np.linalg.norm(real_part + 1j * imag_part) / np.sqrt(points_amount))
 
     return real_part + 1j * imag_part
 
@@ -211,11 +213,12 @@ def single_const_full(bits_amount, mod_create_fun, snr_range, theory_ber_fun, co
     plt.savefig(f"{constellation_name}_ther_model.png")
     # plt.show()
 
-def experiment(bits_amount, mod_create_fun, snr):
+def experiment(bits_amount, mod_create_fun, snr, return_avg_power = False):
     bits = (np.random.rand(bits_amount) > 0.5).astype(int)
      
     mod_arr, bit_depth = mod_create_fun()
     points = modulator(bits, mod_arr, bit_depth)
+    avg_power = 20 * np.log10(np.linalg.norm(points) / np.sqrt(len(points)))
 
     noisy_points = points + gen_awgn(points, snr)
     # breakpoint()
@@ -223,6 +226,8 @@ def experiment(bits_amount, mod_create_fun, snr):
     recv_bits = demodulator(noisy_points, mod_arr, bit_depth)
     ber = eval_ber(bits, recv_bits) 
 
+    if return_avg_power:
+        return ber, avg_power
     return ber
 
 def qam16_bit_shaping(bits_amount, snr, table_fun):
@@ -235,7 +240,7 @@ def qam16_bit_shaping(bits_amount, snr, table_fun):
     # print(f"got {new_bits}, ampls notted: {np.logical_not(new_bits[1::2]).astype(int)}")
     recv = deshape_bits(demodulated, table_fun())
     # breakpoint()
-    return eval_ber(demodulated, new_bits)
+    return eval_ber(demodulated, new_bits), 20 * np.log10(np.linalg.norm(mods) / np.sqrt(len(mods)))
 
 def show_constellations(mapper_arr, bit_depth, constellation_name):
     point_amount = int(2 ** bit_depth)
@@ -258,16 +263,27 @@ def compare_shaping_res():
     ber_shaped_ccdm = np.zeros(snr_amount)
     ber_uniformed = np.zeros(snr_amount)
     bits_amount = 240000
+    power_ess_acc = 0
+    power_ccdm_acc = 0
+    power_uniform_acc = 0
     for i, snr in enumerate(snr_range):
-        print(i)
-        ber_shaped_ess[i] = qam16_bit_shaping(bits_amount, snr, get_ess_table)
-        ber_shaped_ccdm[i] = qam16_bit_shaping(bits_amount, snr, get_ccdm_table)
-        ber_uniformed[i] = experiment(bits_amount, qam16_arr_create, snr)
+        print(f"shaping experiment: snr value {i}/{snr_amount}")
+        ber_shaped_ess[i], power_ess = qam16_bit_shaping(bits_amount, snr, get_ess_table)
+        ber_shaped_ccdm[i], power_ccdm = qam16_bit_shaping(bits_amount, snr, get_ccdm_table)
+        ber_uniformed[i], power_uniform = experiment(bits_amount, qam16_arr_create, snr, True)
+        # print(f"ess, ccdm, uniform: {power_ess}, {power_ccdm}, {power_uniform}")
+        power_ess_acc += power_ess
+        power_ccdm_acc += power_ccdm
+        power_uniform_acc += power_uniform
 
-    plt.plot(snr_range, ber_shaped_ess, label = 'ESS shaping')
-    plt.plot(snr_range, ber_shaped_ccdm, label = 'CCDM shaping')
-    plt.plot(snr_range, ber_uniformed, label = 'Uniform')
+    power_ess_avg = power_ess_acc / len(snr_range)
+    power_ccdm_avg = power_ccdm_acc / len(snr_range)
+    power_uniform_avg = power_uniform_acc / len(snr_range)
+    plt.plot(snr_range, ber_shaped_ess, label = f'ESS shaping, Avg. power: {power_ess_avg:.2f} dB')
+    plt.plot(snr_range, ber_shaped_ccdm, label = f'CCDM shaping, Avg. power: {power_ccdm_avg:.2f} dB')
+    plt.plot(snr_range, ber_uniformed, label = f'Uniform, Avg. power: {power_uniform_avg:.2f} dB')
     plt.xlabel('SNR [dB]')
+    plt.xticks(np.arange(0, 22, 2))
     plt.yscale('log')
     plt.grid()
     plt.ylabel('BER')
@@ -306,7 +322,7 @@ def compare_theory_practice():
                     lambda x : math.erfc(math.sqrt(3 * x / 21)) * (1 - 1 / 8) / 3,
                     ]
     names = ["QPSK", "QAM16", "QAM64"]
-    for i in range(0, len(snr_ranges)):
+    for i in range(1, len(snr_ranges) - 1):
         single_const_full(12 * 100000, funs[i], snr_ranges[i], theory_funcs[i], names[i])
 
     # print_gray()
@@ -321,5 +337,5 @@ if __name__ == "__main__":
     # print(test_bit_shaping(240000, 30))
     # compare_theory_practice()
     # get_constellation_graphs()
-    plot_theory()
-    # compare_shaping_res()
+    # plot_theory()
+    compare_shaping_res()
