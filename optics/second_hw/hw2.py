@@ -6,8 +6,8 @@ import functools
 import scipy
 import time
 from tqdm import tqdm
-import jax
-import jax.numpy as jnp
+# import jax
+# import jax.numpy as jnp
 import gc
 
 def get_ccdm_general_table(k, n):
@@ -73,8 +73,7 @@ def get_ber(ref_bits, recv_bits):
     ber = np.sum(np.logical_xor(ref_bits, recv_bits)) / ref_bits.size
     return ber
 
-def get_U_mat(input_symbols, M, offset):
-    symb_size = input_symbols.shape[0] - 2 * offset
+def get_U_mat(input_symbols, M, offset, symb_size):
     X_x = np.array(input_symbols[:, 0])
     X_y = np.array(input_symbols[:, 1])
     piece_len = 2 * M + 1
@@ -111,8 +110,7 @@ def get_U_mat(input_symbols, M, offset):
     # print(f"took {end - mid} for mult and {mid - start} for init, res shape: {U_x.shape}")
     return U_x
 
-def get_U_mat_simple(input_symbols, M, offset):
-    symb_size = input_symbols.shape[0] - 2 * offset
+def get_U_mat_simple(input_symbols, M, offset, symb_size):
     X_x = input_symbols[:, 0]
     X_y = input_symbols[:, 1]
     piece_len = 2 * M + 1
@@ -133,8 +131,7 @@ def get_U_mat_simple(input_symbols, M, offset):
     # print("Ended")
     return U_x
 
-def get_U_mat_from_tensor(input_symbols, M, offset):
-    symb_size = input_symbols.shape[0] - 2 * offset
+def get_U_mat_from_tensor(input_symbols, M, offset, symb_size):
     X_x = np.array(input_symbols[:, 0])
     X_y = np.array(input_symbols[:, 1])
     piece_len = 2 * M + 1
@@ -150,18 +147,34 @@ def get_U_mat_from_tensor(input_symbols, M, offset):
     U_x = U_x.reshape(symb_size, -1)
     return U_x
 
-def get_nmse_and_ber(matrices_dict, M, offset):
+def get_nmse_and_ber(matrices_dict, M, offset, symb_size):
 
     model_input = matrices_dict['eqSymOutData']
-    model_input_cut = model_input[offset : -offset]
-    model_expected = matrices_dict['srcSymData'][offset : -offset]
-    model_expected_bits = matrices_dict['srcPermBitData'][offset * 4 : -4 * offset]
+    model_input_cut = model_input[offset : symb_size + offset]
+    model_expected = matrices_dict['srcSymData'][offset : symb_size + offset]
+    model_expected_bits = matrices_dict['srcPermBitData'][offset * 4 :(symb_size + offset) * 4]
     # breakpoint()
     denom = np.sum(np.square(np.abs(model_expected)))
+    denom_x = np.sum(np.square(np.abs(model_expected[:, 0])))
+    denom_y = np.sum(np.square(np.abs(model_expected[:, 1])))
 
     if M == 0: # without model
-        model_output = model_input[offset : -offset]
+        model_output = model_input[offset : symb_size + offset]
         nmse = np.sum(np.square(np.abs(model_output - model_expected))) / denom
+        nmse_x = np.sum(np.square(np.abs(model_output[:, 0] - model_expected[:, 0]))) / denom_x
+        nmse_y = np.sum(np.square(np.abs(model_output[:, 1] - model_expected[:, 1]))) / denom_y
+
+        ber_x_y = [0,0]
+        ser_x_y = [0,0]
+        for i in range(2):
+            recv_points = hard_slicer(model_output[:, i], *qam16_arr_create())
+            ser_x_y[i] = get_ser(model_expected[:, i], recv_points)
+            
+            recv_bits = get_bits(recv_points)
+            ref_bits = get_bits(model_expected[:, i])
+            ber_x_y[i] = get_ber(ref_bits, recv_bits)
+        ber_x, ber_y = ber_x_y
+        ser_x, ser_y = ser_x_y
 
         recv_points = hard_slicer(model_output.reshape(1, -1)[0], *qam16_arr_create())
         ser = get_ser(model_expected.reshape(1, -1)[0], recv_points)
@@ -169,27 +182,46 @@ def get_nmse_and_ber(matrices_dict, M, offset):
         recv_bits = get_bits(recv_points)
         ref_bits = get_bits(model_expected.reshape(1, -1)[0])
         ber = get_ber(ref_bits, recv_bits)
-        return nmse, ser, ber
+        return (nmse_x, nmse_y, nmse), (ser_x, ser_y, ser), (ber_x, ber_y, ber)
+
 
     model_swapped = np.array(np.concat((model_input[:, [1]], model_input[:, [0]]), axis=1))
     # get_U_simple_jaxed = jax.jit(get_U_mat_simple, static_argnames=("M", "offset"))(PBM_input, M, offset)
     # print("compiled")
-    symb_amount = model_input.shape[0] - 2 * offset
-    U = np.zeros((2, symb_amount, 2 * (2 * M + 1) * (2 * M + 1)), dtype=np.complex64)
-    U[0] = get_U_mat(model_input, M, offset)
+    U = np.zeros((2, symb_size, 2 * (2 * M + 1) * (2 * M + 1)), dtype=np.complex64)
+    U[0] = get_U_mat(model_input, M, offset, symb_size)
     gc.collect()
-    U[1] = get_U_mat(model_swapped, M, offset)
+    U[1] = get_U_mat(model_swapped, M, offset, symb_size)
     gc.collect()
     print("ended creating U matrix")
 
     # d_vec = jnp.array(d_vec)
-    c = np.matmul(np.linalg.pinv(U), np.expand_dims((model_expected - model_input_cut).T, 2))
+    U_pinv = np.linalg.pinv(U)
+    print("Evaluated pinv")
+    gc.collect()
+    c = np.matmul(U_pinv, np.expand_dims((model_expected - model_input_cut).T, 2))
+    print("Evaluated the coefficients")
     gc.collect()
     model_output = np.squeeze(np.matmul(U, c), 2).T + model_input_cut
+    print("Got the model output")
     gc.collect()
 
     nmse = np.sum(np.square(np.abs(model_output - model_expected))) / denom
+    nmse_x = np.sum(np.square(np.abs(model_output[:, 0] - model_expected[:, 0]))) / denom_x
+    nmse_y = np.sum(np.square(np.abs(model_output[:, 1] - model_expected[:, 1]))) / denom_y
     gc.collect()
+    
+    ber_x_y = [0,0]
+    ser_x_y = [0,0]
+    for i in range(2):
+        recv_points = hard_slicer(model_output[:, i], *qam16_arr_create())
+        ser_x_y[i] = get_ser(model_expected[:, i], recv_points)
+        
+        recv_bits = get_bits(recv_points)
+        ref_bits = get_bits(model_expected[:, i])
+        ber_x_y[i] = get_ber(ref_bits, recv_bits)
+    ber_x, ber_y = ber_x_y
+    ser_x, ser_y = ser_x_y
 
     recv_points = hard_slicer(model_output.reshape(1, -1)[0], *qam16_arr_create())
     ser = get_ser(model_expected.reshape(1, -1)[0], recv_points)
@@ -199,26 +231,64 @@ def get_nmse_and_ber(matrices_dict, M, offset):
     ber = get_ber(ref_bits, recv_bits)
 
     gc.collect()
-    return nmse, ser, ber
+    return (nmse_x, nmse_y, nmse), (ser_x, ser_y, ser), (ber_x, ber_y, ber)
 
 def whole_experiment():
-    offset = 100000 # good value
-    # offset = 70000
-    # offset = 100
+    # offset = 100000 # good value
+    offset = 100000
+    symb_size = 50000
+    # offset = 50000
+    # offset = 200
     res = scipy.io.loadmat("/home/lexotr/my_gits/9_semester_programming/optics/second_hw/pbm_test.mat")
     matrices_dict = {}
     for key in res:
         if str(key).startswith("__"):
             continue
         matrices_dict[key] = res[key]
-    no_model_nmse, no_model_ser, no_model_ber = get_nmse_and_ber(matrices_dict, 0, offset)
-    print(f"No model: NMSE: {no_model_nmse}, NMSE(dB): {10 * np.log10(no_model_nmse)}, SER: {no_model_ser}, BER: {no_model_ber}")
-    M_range = [5, 10]
-    # M_range = [5]
+    no_model_nmse_tuple, no_model_ser_tuple, no_model_ber_tuple = get_nmse_and_ber(matrices_dict, 0, offset, symb_size)
+    nmse_arr = []
+    ber_arr = []
+    nmse_x_arr = []
+    ber_x_arr = []
+    nmse_y_arr = []
+    ber_y_arr = []
+    print(f"No model: NMSE: {no_model_nmse_tuple[2]}, NMSE(dB): {10 * np.log10(no_model_nmse_tuple[2])}, SER: {no_model_ser_tuple[2]}, BER: {no_model_ber_tuple[2]}")
+    M_range = range(16, 21)
+    # M_range = range(11)
+    # M_range = [11]
     for M in M_range:
-        model_nmse, model_ser, model_ber = get_nmse_and_ber(matrices_dict, M, offset)
-        print(f"M = {M}: NMSE: {model_nmse}, NMSE(dB): {10 * np.log10(model_nmse)}, SER: {model_ser}, BER: {model_ber}")
+        model_nmse_tuple, model_ser_tuple, model_ber_tuple = get_nmse_and_ber(matrices_dict, M, offset, symb_size)
+        nmse_x_arr.append(model_nmse_tuple[0])
+        ber_x_arr.append(model_ber_tuple[0])
+        nmse_y_arr.append(model_nmse_tuple[1])
+        ber_y_arr.append(model_ber_tuple[1])
+        nmse_arr.append(model_nmse_tuple[2])
+        ber_arr.append(model_ber_tuple[2])
+        print(f"M = {M}: NMSE: {model_nmse_tuple[2]}, NMSE(dB): {10 * np.log10(model_nmse_tuple[2])}, SER: {model_ser_tuple[2]}, BER: {model_ber_tuple[2]}")
         gc.collect()
+        np.save(f"nmsex_{offset}_{symb_size}.npy", np.array(nmse_x_arr))
+        np.save(f"berx_{offset}_{symb_size}.npy", np.array(ber_x_arr))
+        np.save(f"nmsey_{offset}_{symb_size}.npy", np.array(nmse_y_arr))
+        np.save(f"bery_{offset}_{symb_size}.npy", np.array(ber_y_arr))
+        np.save(f"nmse_{offset}_{symb_size}.npy", np.array(nmse_arr))
+        np.save(f"ber_{offset}_{symb_size}.npy", np.array(ber_arr))
+        gc.collect()
+    plt.plot(M_range, 10 * np.log10(np.array(nmse_arr)))
+    plt.grid()
+    plt.xlabel('M')
+    plt.ylabel('NMSE')
+    plt.title('NMSE(M)')
+    plt.savefig("NMSE_M.png")
+    plt.show()
+    
+    plt.plot(M_range, ber_arr)
+    plt.yscale('log')
+    plt.grid()
+    plt.xlabel('M')
+    plt.ylabel('BER')
+    plt.title('BER(M)')
+    plt.savefig("BER_M.png")
+    plt.show()
 
 if __name__ == "__main__":
     whole_experiment()
