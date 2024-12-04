@@ -49,9 +49,9 @@ def get_U_mat(input_symbols, M, offset, symb_size):
     X_x = np.array(input_symbols[:, 0])
     X_y = np.array(input_symbols[:, 1])
     piece_len = 2 * M + 1
-    x_k_n = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex64)
-    x_k_m = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex64)
-    x_k_n_m = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex64)
+    x_k_n = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex128)
+    x_k_m = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex128)
+    x_k_n_m = np.zeros((symb_size, piece_len * piece_len * 2), dtype=np.complex128)
 
     start = time.perf_counter()
     for k in tqdm(range(symb_size)):
@@ -76,6 +76,7 @@ def get_U_mat(input_symbols, M, offset, symb_size):
     mid = time.perf_counter()
 
     U_x = np.multiply(np.multiply(x_k_m, x_k_n), x_k_n_m)
+    U_x += 1e-10 * np.eye(U_x.shape[0], U_x.shape[1])
     # U_x = jnp.array(U_x)
     end = time.perf_counter()
     
@@ -87,7 +88,7 @@ def get_model_output(model_input, model_input_cut, model_expected, M, offset, sy
     if M == 0: # without model
         return model_input_cut
     model_swapped = np.array(np.concat((model_input[:, [1]], model_input[:, [0]]), axis=1))
-    U = np.zeros((2, symb_size, 2 * (2 * M + 1) * (2 * M + 1)), dtype=np.complex64)
+    U = np.zeros((2, symb_size, 2 * (2 * M + 1) * (2 * M + 1)), dtype=np.complex128)
     U[0] = get_U_mat(model_input, M, offset, symb_size)
     gc.collect()
     U[1] = get_U_mat(model_swapped, M, offset, symb_size)
@@ -174,8 +175,8 @@ def get_nmse_and_ber(matrices_dict, M, offset, symb_size):
 
 def whole_experiment():
     # offset = 100000 # good value
-    offset = 220000
-    symb_size = 25000
+    offset = 100000
+    symb_size = 50000
     # offset = 50000
     # offset = 200
     res = scipy.io.loadmat("./pbm_test.mat")
@@ -192,7 +193,7 @@ def whole_experiment():
     nmse_y_arr = []
     ber_y_arr = []
     print(f"No model: NMSE: {no_model_nmse_tuple[2]}, NMSE(dB): {10 * np.log10(no_model_nmse_tuple[2])}, SER: {no_model_ser_tuple[2]}, BER: {no_model_ber_tuple[2]}")
-    M_range = range(18, 19)
+    M_range = range(0, 21)
     # M_range = range(11)
     # M_range = [11]
     for M in M_range:
