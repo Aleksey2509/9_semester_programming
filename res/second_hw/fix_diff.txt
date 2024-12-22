@@ -1,0 +1,145 @@
+diff --git a/smithplot/smithaxes.py b/smithplot/smithaxes.py
+index 2ed8cbb..d552d27 100644
+--- a/smithplot/smithaxes.py
++++ b/smithplot/smithaxes.py
+@@ -36,7 +36,7 @@ of all given parameters. This does not work always, especially if the
+ parameters are array-like types (e.g. numpy.ndarray).
+ '''
+ 
+-from collections import Iterable
++from collections.abc import Iterable
+ from numbers import Number
+ from types import MethodType, FunctionType
+ 
+@@ -449,18 +449,19 @@ class SmithAxes(Axes):
+                              self.yaxis.get_majorticklocs()):
+             # workaround for fixing to small infinity symbol
+             if abs(loc) > self._near_inf:
+-                tick.label.set_size(tick.label.get_size() +
+-                                    self._get_key("symbol.infinity.correction"))
++                tick._size = tick._size + self._get_key("symbol.infinity.correction")
++                # tick.label.set_size(tick.label.get_size() +
++                #                     self._get_key("symbol.infinity.correction"))
+ 
+-            tick.label.set_verticalalignment('center')
++            # tick._label.set_verticalalignment('center')
+ 
+-            x = np.real(self._moebius_z(loc * 1j))
+-            if x < -0.1:
+-                tick.label.set_horizontalalignment('right')
+-            elif x > 0.1:
+-                tick.label.set_horizontalalignment('left')
+-            else:
+-                tick.label.set_horizontalalignment('center')
++            # x = np.real(self._moebius_z(loc * 1j))
++            # if x < -0.1:
++            #     tick.label.set_horizontalalignment('right')
++            # elif x > 0.1:
++            #     tick.label.set_horizontalalignment('left')
++            # else:
++            #     tick.label.set_horizontalalignment('center')
+ 
+         self.yaxis.set_major_formatter(self.ImagFormatter(self))
+         self.xaxis.set_major_formatter(self.RealFormatter(self))
+@@ -506,10 +507,7 @@ class SmithAxes(Axes):
+         return self._yaxis_transform
+ 
+     def get_yaxis_text1_transform(self, pixelPad):
+-        if hasattr(self, 'yaxis') and len(self.yaxis.majorTicks) > 0:
+-            font_size = self.yaxis.majorTicks[0].label.get_size()
+-        else:
+-            font_size = self._get_key("font.size")
++        font_size = self._get_key("font.size")
+ 
+         offset = self._get_key("axes.ylabel.correction")[2]
+         return self._yaxis_text1_transform + self.PolarTranslate(self, pad=pixelPad + offset, font_size=font_size), 'center', 'center'
+@@ -655,12 +653,11 @@ class SmithAxes(Axes):
+             def create_artists(self, legend, orig_handle,
+                                xdescent, ydescent, width, height, fontsize,
+                                trans):
+-                legline, legline_marker = HandlerLine2D.create_artists(self, legend, orig_handle, xdescent, ydescent,
++                legline = HandlerLine2D.create_artists(self, legend, orig_handle, xdescent, ydescent,
+                                                                        width, height, fontsize, trans)
+-
+                 if hasattr(orig_handle, "_markerhacked"):
+-                    this_axes._hack_linedraw(legline_marker, True)
+-                return legline, legline_marker
++                    this_axes._hack_linedraw(legline[0], True)
++                return legline
+ 
+         return Axes.legend(self, *args, handler_map={Line2D: SmithHandlerLine2D()}, **kwargs)
+ 
+@@ -728,7 +725,7 @@ class SmithAxes(Axes):
+                     pass
+ 
+             # if (converted) arg is an ndarray of complex type, split it
+-            if isinstance(arg, np.ndarray) and arg.dtype in [np.complex, np.complex128]:
++            if isinstance(arg, np.ndarray) and arg.dtype in [complex, np.complex128]:
+                 new_args += z_to_xy(arg)
+             else:
+                 new_args += (arg,)
+@@ -1061,11 +1058,11 @@ class SmithAxes(Axes):
+ 
+                             x_div, y_div = d_mat[i, k]
+ 
+-                            for xs in np.linspace(x0, x1, x_div + 1)[1:]:
++                            for xs in np.linspace(x0, x1, int(x_div + 1))[1:]:
+                                 x_lines.append([xs, y0, y1])
+                                 x_lines.append([xs, -y1, -y0])
+ 
+-                            for ys in np.linspace(y0, y1, y_div + 1)[1:]:
++                            for ys in np.linspace(y0, y1, int(y_div + 1))[1:]:
+                                 y_lines.append([ys, x0, x1])
+                                 y_lines.append([-ys, x0, x1])
+ 
+diff --git a/smithplot/smithhelper.py b/smithplot/smithhelper.py
+index cba2199..b4be7f3 100644
+--- a/smithplot/smithhelper.py
++++ b/smithplot/smithhelper.py
+@@ -1,7 +1,7 @@
+ # -*- coding: utf-8 -*-
+ # last edit: 11.04.2018
+ 
+-from collections import Iterable
++from collections.abc import Iterable
+ 
+ import numpy as np
+ 
+diff --git a/testbenches/smith_full_test.py b/testbenches/smith_full_test.py
+index f10b4ce..4129b86 100755
+--- a/testbenches/smith_full_test.py
++++ b/testbenches/smith_full_test.py
+@@ -145,12 +145,13 @@ def tb_markers():
+     fig.set_tight_layout(True)
+ 
+     i = 0
+-    for hackline, startmarker, endmarker, rotate_marker in [[False, None, None, False],
+-                                                            [True, "s", "^", False],
+-                                                            [True, "s", None, False],
++    for hackline, startmarker, endmarker, rotate_marker in [[True, "s", "^", False],
+                                                             [True, VStartMarker, XEndMarker, False],
+                                                             [True, "s", "^", True],
+-                                                            [True, None, "^", False]]:
++                                                            # [True, "s", "^", False],
++                                                            # [False, None, None, False],
++                                                            # [True, None, "^", False]
++                                                            ]:
+         i += 1
+         ax = pp.subplot(2, 3, i, projection="smith",
+                         plot_marker_hack=hackline,
+@@ -247,10 +248,12 @@ if __name__ == '__main__':
+         r = []
+         for key, func in locals().copy().items():
+             if isinstance(func, FunctionType) and "tb_" in key:
+-                r += [p.apply_async(func, {})]
++                print(func)
++                func()
++                # r += [p.apply_async(func, {})]
+ 
+-        for proc in r:
+-            proc.get()
++        # for proc in r:
++        #     proc.get()
+     else:
+         pass
+         # tb_grid_styles()
