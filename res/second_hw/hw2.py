@@ -119,5 +119,27 @@ def task2(Z_0=50):
     plt.show()
 
 
+def task3():
+    K_arr_dB = np.array([-3.5, 10, -3.5, 13, -3.1, 14.1, 0])
+    K_arr = np.power(10, K_arr_dB / 10)
+    F_arr_dB = np.array([3.5, 0.9, 3.5, 9, 3.1, 1.7, 29.5])
+    F_arr = np.power(10, F_arr_dB / 10)
+    IP3_arr_dB = np.array([100, 14.5, 100, 9.8, 100, 20, 30.5])
+    IP3_arr = np.power(10, IP3_arr_dB / 10)
+
+    K_arr_to_cum_prod = 1 / np.concatenate(([1], K_arr))[:-1]
+    print(K_arr_to_cum_prod)
+    K_cumprod = np.cumprod(K_arr_to_cum_prod)
+    F_minus_one = F_arr - 1
+    F_minus_one[0] = F_arr[0]
+
+    IP3_for_cumsum = 1 / np.square(IP3_arr * K_arr_to_cum_prod)
+    IP3_cumsum = np.sqrt(1 / np.cumsum(IP3_for_cumsum)) 
+
+    noise_factors = np.cumsum(F_minus_one * K_cumprod)
+    print(f"noise factors {noise_factors}")
+    print(f"IP3: {IP3_cumsum}")
+
+
 if __name__ == "__main__":
-    task2()
+    task3()
