@@ -1,8 +1,6 @@
 import scipy
 import numpy as np
 import matplotlib.pyplot as plt
-import jax
-import jax.numpy as jnp
 from functools import partial
 from smithplot import SmithAxes
 
@@ -12,7 +10,7 @@ def for_integr(theta, k_val, l):
     return numer / np.sin(theta)
 
 def get_impedance():
-    nu_values = np.arange(50, 500, 1)
+    nu_values = np.arange(50, 500, 0.1)
     k_arr = 2 * np.pi * nu_values / 300
     Z_arr = np.zeros_like(k_arr, dtype=np.complex128)
     l = 1
@@ -77,8 +75,8 @@ def task1():
     plt.xlabel("frequencies (MHZ)")
     plt.ylabel("|gamma|")
     plt.title("Absolute value of reflection coefficient (f)")
-    plt.savefig(f"pictures/Gamma1.png")
     plt.grid()
+    plt.savefig(f"pictures/Gamma1.png")
     plt.show()
 
     gamma_arr_dB = 10 * np.log10(np.abs(gamma_arr))
@@ -87,8 +85,8 @@ def task1():
     plt.xlabel("frequencies (MHZ)")
     plt.ylabel("|gamma|(dB)")
     plt.title("Absolute value of reflection coefficient in dB (f)")
-    plt.savefig(f"pictures/Gamma1_dB.png")
     plt.grid()
+    plt.savefig(f"pictures/Gamma1_dB.png")
     plt.show()
     
     plt.figure()
@@ -140,7 +138,7 @@ def get_resist_with_line(Z_0, nu_0=100):
         common_part = np.sqrt((Z_0 - R_L) * R_L)
         omega_L = (common_part - X_L) * nu_values / nu_0
         omega_C = (common_part / (Z_0 * R_L)) * nu_values / nu_0
-        resist_sum = Z + 1j * omega_L[i]
+        resist_sum = Z + 1j * omega_L
         equiv_Z = resist_sum / (1 + 1j * omega_C * resist_sum)
 
     return nu_values, Z_arr, omega_C, omega_L, equiv_Z
@@ -189,6 +187,7 @@ def task2(Z_0=50):
     plt.grid()
     plt.savefig(f"pictures/Gamma2_dB.png")
     plt.show()
+    print(f'Gamma less -20dB in {nu_values[np.where(gamma_arr_dB < -20)]}')
 
     SWR = (1 + np.abs(gamma_arr)) / (1 - np.abs(gamma_arr))
     plt.figure()
@@ -201,6 +200,17 @@ def task2(Z_0=50):
     plt.show()
 
     plt.figure()
+    plt.plot(nu_values, SWR)
+    plt.xlabel("frequencies (MHZ)")
+    plt.ylabel("SWR")
+    plt.ylim((0, 10))
+    plt.title("Standing wave ratio(f)")
+    plt.grid()
+    plt.savefig(f"pictures/SWR_10.png")
+    plt.show()
+    print(f'SWR less 1.22 in {nu_values[np.where(SWR < 1.22)]}')
+
+    plt.figure()
     ax = plt.subplot(111, projection="polar")
     ax.plot(np.angle(gamma_arr), np.abs(gamma_arr))
     plt.xlabel('Real(gamma)')
@@ -208,36 +218,6 @@ def task2(Z_0=50):
     plt.title('Gamma')
     plt.savefig(f"pictures/Gamma2_polar.png")
     plt.show()
-
-    return
-
-
-def get_noise(F_array, K_array):
-    inverted_K = jnp.divide(jnp.ones(K_array.size), K_array)
-    inverted_K = jnp.roll(inverted_K, 1)
-    inverted_K = inverted_K.at[0].set(1)
-    inverted_K_cumprod = jnp.cumprod(inverted_K)
-
-    F_array_minus_one = F_array - jnp.ones(F_array.size)
-    F_array_minus_one = F_array_minus_one.at[0].set(F_array[0])
-    return jnp.sum(F_array_minus_one * inverted_K_cumprod)
-
-
-def get_IP3(IP3_arr, K_array):
-    inverted_K = jnp.divide(jnp.ones(K_array.size), K_array)
-    inverted_K = jnp.roll(inverted_K, 1)
-    inverted_K = inverted_K.at[0].set(1)
-    inverted_K_cumprod = jnp.cumprod(inverted_K)
-
-    IP3_for_cumsum = jnp.divide(
-        jnp.ones(IP3_arr.size), jnp.square(IP3_arr * inverted_K_cumprod)
-    )
-
-    IP3_cumsum = jnp.sqrt(
-        jnp.cumsum(jnp.divide(jnp.ones(IP3_for_cumsum.size), IP3_for_cumsum))
-    )
-    return IP3_cumsum[-1]
-
 
 def task3():
     K_arr_dB = np.array([-3.5, 10, -3.5, 13, -3.1, 14.1, 0])
@@ -252,11 +232,6 @@ def task3():
     F_minus_one = F_arr - 1
     F_minus_one[0] = F_arr[0]
 
-    noise_grad = jax.grad(get_noise, argnums=0)
-    print(f"noise grads: {noise_grad(jnp.array(F_arr), jnp.array(K_arr))}")
-    ip3_grad = jax.grad(get_IP3, argnums=0)
-    print(f"ip3 grads: {ip3_grad(jnp.array(IP3_arr), jnp.array(K_arr))}")
-
     noise_factors_to_cum_sum = F_minus_one * K_cumprod
     noise_factors = np.cumsum(F_minus_one * K_cumprod)
     print(f"noise factors singled {noise_factors_to_cum_sum}")
@@ -270,4 +245,5 @@ def task3():
 if __name__ == "__main__":
     task1()
     task2()
+    task3()
     input('Hey')
