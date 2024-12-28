@@ -1,3 +1,4 @@
+import os
 import scipy
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ def for_integr(theta, k_val, l):
     return numer / np.sin(theta)
 
 def get_impedance():
-    nu_values = np.arange(50, 500, 0.1)
+    nu_values = np.arange(50, 500, 1)
     k_arr = 2 * np.pi * nu_values / 300
     Z_arr = np.zeros_like(k_arr, dtype=np.complex128)
     l = 1
@@ -243,7 +244,10 @@ def task3():
     print(f"IP3: {IP3_cumsum}")
 
 if __name__ == "__main__":
+    pics_path = 'pictures'
+    if not os.path.exists(pics_path):
+          os.makedirs(pics_path)
     task1()
     task2()
     task3()
-    input('Hey')
+    input('Press any key to close graphs')
